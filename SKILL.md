@@ -65,6 +65,16 @@ python scripts/fix_session_paths.py --db "%USERPROFILE%\.workbuddy\workbuddy.db"
 - 仍失效的（如已删空目录）指向 `_归档-空会话/<原名>` 并建空目录，保证历史会话可打开
 - 会话的**对话内容存在数据库里**，移动文件夹不会丢失记录，只是路径失效
 
+### 5. 任务名自动改名（可选但推荐）
+```bash
+python scripts/rename_sessions.py            # 预览
+python scripts/rename_sessions.py --apply    # 执行
+```
+- 会话列表里的任务名 = `sessions` 表的 `custom_title`（优先）或 `title`（首条消息截取）
+- 规则：**绝不覆盖用户手动命名的**（custom_title 非空跳过）；cwd 有「日期-主题」的取主题；
+  垃圾标题（超长/多行/@指令开头/路径/纯时间）清洗成短标题；洗不干净的放弃不动
+- 坑：正则要在 .py 文件里写，用 heredoc/`python -c` 内联会被 bash 转义搞坏（`\\\\d` 变 `\\d` 之类）
+
 ### 5. 写索引
 根目录维护 `_总索引.md`：分类表 + 每个空间的明细 + 待办。每次归档后更新。
 
