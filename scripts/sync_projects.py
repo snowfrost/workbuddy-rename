@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-r"""同步 workbuddy-rename 改名操作后 ~/.workbuddy/projects/ 目录名。
+r"""同步 workbuddy-rename 改名操作后 ~/.workbuddy/projects/ 目录名。（plan 驱动版）
+
+> 首选 `fix_projects_dirs.py`：它直接读 db 的 `sessions.cwd` 反推目标目录名，
+> 能自动处理「整目录改名 / 合并 / 拆分」，还会顺带修 `app/sessions.json` 的 workDir。
+> 本脚本是 plan 驱动版，适合 db 不可用、或想严格照 plan 走的场景。两者择一即可，别同时跑。
 
 WorkBuddy 的对话记录存在 ~/.workbuddy/projects/<路径平铺化>/ 下（<sessionId>.jsonl）。
 改名工作区目录后，若不同步重命名 projects 目录，点开任务会显示「暂无对话记录」。
