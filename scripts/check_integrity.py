@@ -13,6 +13,12 @@ import argparse
 TS = re.compile(r'^20\d\d-\d\d-\d\d-\d\d-\d\d-\d\d$')
 
 
+def flatten(abspath):
+    """把绝对路径平铺化为 projects 目录名：C: -> c，分隔符 -> -。"""
+    p = os.path.normpath(abspath)
+    return p[:1].lower() + p[1:].replace(":", "").replace("\\", "-").replace("/", "-")
+
+
 def iter_files(path):
     """Windows 长路径安全的遍历：用 \\\\?\\ 前缀 + onerror 报告，避免静默漏统计。"""
     abs_path = os.path.abspath(path)
@@ -88,6 +94,22 @@ def main():
             print('[ok] 会话目录路径全部有效（共 %d 条会话）' % len(rows))
     else:
         print('[--] 未找到数据库：%s' % args.db)
+
+    # projects 对话记录目录一致性：工作区目录存在但 projects 目录缺失 = 改名没同步
+    proj = os.path.expanduser('~/.workbuddy/projects')
+    if os.path.isdir(proj):
+        missing = []
+        for name in os.listdir(root):
+            full = os.path.join(root, name)
+            if not os.path.isdir(full) or name.startswith('.'):
+                continue
+            if not os.path.isdir(os.path.join(proj, flatten(full))):
+                missing.append(name)
+        if missing:
+            print('[!] projects 目录缺失 %d 个（改名没同步，点开会「暂无对话记录」）：%s' % (len(missing), ', '.join(missing[:8])))
+            problems += 1
+        else:
+            print('[ok] projects 对话记录目录与工作区一一对应')
 
     print('\n总体量 %s MB，发现 %d 类问题' % (total, problems))
     return 0
