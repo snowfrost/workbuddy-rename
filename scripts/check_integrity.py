@@ -10,6 +10,10 @@ import sys
 import sqlite3
 import argparse
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import paths  # noqa: E402
+
+
 TS = re.compile(r'^20\d\d-\d\d-\d\d-\d\d-\d\d-\d\d$')
 
 
@@ -42,10 +46,10 @@ def dir_size_mb(path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('root')
+    ap.add_argument('root', nargs='?', default=None)
     ap.add_argument('--db', default=os.path.expanduser('~/.workbuddy/workbuddy.db'))
     args = ap.parse_args()
-    root = os.path.abspath(args.root)
+    root = os.path.abspath(args.root or paths.detect_root())
 
     print('=== 分类目录 ===')
     total = 0
@@ -64,14 +68,17 @@ def main():
     stray = [n for n in sorted(os.listdir(root))
              if os.path.isdir(os.path.join(root, n)) and TS.match(n)]
     if stray:
-        print('[!] 根目录仍有裸时间戳目录 %d 个：%s' % (len(stray), ', '.join(stray[:5])))
+        print('[!] 根目录仍有裸时间戳目录 %d 个（若正被活跃会话占用属正常，待其结束由自动归档处理）：%s' % (len(stray), ', '.join(stray[:5])))
         problems += 1
     else:
         print('[ok] 根目录无裸时间戳目录')
 
+    KEEP = {'Claw', 'skill', 'resources', 'map-creator-main', '小小东', 'auths', 'data',
+            '_归档-空会话'}
     empty_cats = [n for n in sorted(os.listdir(root))
                   if os.path.isdir(os.path.join(root, n))
                   and not n.startswith('.')
+                  and n not in KEEP
                   and not [c for c in os.listdir(os.path.join(root, n)) if c != '.workbuddy']]
     if empty_cats:
         print('[!] 空分类目录：%s' % ', '.join(empty_cats))
@@ -95,21 +102,23 @@ def main():
     else:
         print('[--] 未找到数据库：%s' % args.db)
 
-    # projects 对话记录目录一致性：工作区目录存在但 projects 目录缺失 = 改名没同步
+    # projects 对话记录目录一致性：按 sessions.cwd 反查（工作区存在但 projects/<slug> 缺失 = 改名没同步）
+    # 注意：不能用「根目录下每个目录」的口径——分类目录（01-xxx）本身不是会话 cwd，
+    #       真 cwd 是分类下的子目录，否则必然误报。口径与 check_projects.py 保持一致。
     proj = os.path.expanduser('~/.workbuddy/projects')
-    if os.path.isdir(proj):
-        missing = []
-        for name in os.listdir(root):
-            full = os.path.join(root, name)
-            if not os.path.isdir(full) or name.startswith('.'):
-                continue
-            if not os.path.isdir(os.path.join(proj, flatten(full))):
-                missing.append(name)
+    if os.path.isdir(proj) and os.path.isfile(args.db):
+        conn = sqlite3.connect('file:%s?mode=ro' % args.db.replace('\\', '/'), uri=True)
+        rows = conn.execute('select id, cwd from sessions').fetchall()
+        conn.close()
+        missing = [(i, c) for i, c in rows
+                   if c and os.path.isdir(c) and not os.path.isdir(os.path.join(proj, flatten(c)))]
         if missing:
-            print('[!] projects 目录缺失 %d 个（改名没同步，点开会「暂无对话记录」）：%s' % (len(missing), ', '.join(missing[:8])))
+            print('[!] 会话 cwd 存在但 projects 对话目录缺失 %d 条（改名没同步，点开会「暂无对话记录」）：' % len(missing))
+            for i, c in missing[:5]:
+                print('      %s  %s' % (i[:8], c))
             problems += 1
         else:
-            print('[ok] projects 对话记录目录与工作区一一对应')
+            print('[ok] projects 对话目录与全部会话 cwd 一一对应')
 
     print('\n总体量 %s MB，发现 %d 类问题' % (total, problems))
     return 0

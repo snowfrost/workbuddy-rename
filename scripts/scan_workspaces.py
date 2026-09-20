@@ -9,6 +9,10 @@ import sys
 import json
 import argparse
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import paths  # noqa: E402
+
+
 IGNORE = {'.workbuddy'}
 
 
@@ -62,11 +66,11 @@ def read_topic(ws):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('root')
+    ap.add_argument('root', nargs='?', default=None)
     ap.add_argument('--out', default='scan.json')
     args = ap.parse_args()
 
-    root = args.root
+    root = os.path.abspath(args.root or paths.detect_root())
     result = []
     for name in sorted(os.listdir(root)):
         full = os.path.join(root, name)

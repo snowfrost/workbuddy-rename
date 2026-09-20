@@ -21,6 +21,10 @@ import json
 import shutil
 import argparse
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import paths  # noqa: E402
+
+
 
 def flatten(abspath):
     """把绝对路径平铺化为 projects 目录名。"""
@@ -33,10 +37,13 @@ def flatten(abspath):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--map", required=True, help="apply_plan.py 使用的 plan.json")
-    ap.add_argument("--root", default=r"C:\Users\snowf\WorkBuddy")
+    ap.add_argument("--root", default=None)
     ap.add_argument("--projects", default=os.path.expanduser("~/.workbuddy/projects"))
     ap.add_argument("--apply", action="store_true")
     args = ap.parse_args()
+
+    if not args.root:
+        args.root = paths.detect_root()
 
     plan = json.load(open(args.map, encoding="utf-8"))
     root = os.path.abspath(args.root)

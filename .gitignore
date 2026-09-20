@@ -3,3 +3,5 @@ __pycache__/
 scan.json
 plan.json
 .DS_Store
+config.json
+projects_map_*.json

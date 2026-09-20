@@ -17,6 +17,10 @@ import shutil
 import argparse
 import datetime
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import paths  # noqa: E402
+
+
 
 def is_effectively_empty(path):
     """只有 .workbuddy 之外没有任何内容才算真空。"""
@@ -29,13 +33,13 @@ def is_effectively_empty(path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('root')
+    ap.add_argument('root', nargs='?', default=None)
     ap.add_argument('plan')
     ap.add_argument('--mapping', default=None)
     ap.add_argument('--dry-run', action='store_true')
     args = ap.parse_args()
 
-    root = os.path.abspath(args.root)
+    root = os.path.abspath(args.root or paths.detect_root())
     plan = json.load(open(args.plan, encoding='utf-8'))
     stamp = datetime.date.today().isoformat()
     mapping_path = args.mapping or os.path.join(root, '_整理对照表-%s.md' % stamp)

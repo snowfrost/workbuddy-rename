@@ -1,6 +1,6 @@
 ---
 name: workbuddy-rename
-description: Organize, rename and archive WorkBuddy workspace folders. Use when the user complains that workspace folders are unfindable (timestamp-only names), wants to rename/plan/archive workspaces, wants output files (images/md/video) classified, or asks to clean up F:\workbuddy. Scans workspaces, infers each one's topic from .workbuddy/memory, proposes a YYYY-MM-DD-topic naming plan, applies moves, then repairs every stale path reference: the WorkBuddy database (sessions.cwd, automations.cwds), the ~/.workbuddy/projects conversation store, artifact-index/changes-* artifact links, and edge-sync caches. Missing the projects store makes old sessions open blank / appear lost; missing the artifact indexes makes output files unopenable. Also writes an index.
+description: Organize, rename and archive WorkBuddy workspace folders. Use when the user complains that workspace folders are unfindable (timestamp-only names), wants to rename/plan/archive workspaces, wants output files (images/md/video) classified, or asks to clean up the workspace root (auto-detected). Scans workspaces, infers each one's topic from .workbuddy/memory, proposes a YYYY-MM-DD-topic naming plan, applies moves, then repairs every stale path reference: the WorkBuddy database (sessions.cwd, automations.cwds), the ~/.workbuddy/projects conversation store, artifact-index/changes-* artifact links, and edge-sync caches. Missing the projects store makes old sessions open blank / appear lost; missing the artifact indexes makes output files unopenable. Also writes an index. Covers space hygiene: draft 3-way classification (recipe/asset/dependency) before clearing 04_temp, non-destructive rules (backup first, batches of 10, trash over rm, stop on error), and a read-only quarterly inspection (disk hogs / cold files / stalled tasks / memory health) that reports and waits for user approval.
 agent_created: true
 ---
 
@@ -52,10 +52,19 @@ python scripts/check_projects.py                 # 目录一致性
 # 若某会话最后一条是 history-missing，而它已修复 → 重启 WorkBuddy 或重新点开即可
 ```
 
+## 零之二、路径自动匹配（本机已内置）
+
+- `scripts/paths.py` 自动探测工作空间根与 db，优先级：**环境变量 `WORKBUDDY_WORKSPACES_ROOT` / `WORKBUDDY_DB` → `config.json` → 从 `workbuddy.db` 的 `sessions.cwd`/`workspaces.path` 反推公共父目录 → 当前 cwd 的父级**。
+- 因此**换盘符（F: → D:）、换机器后无需改脚本**：`scan_workspaces.py` / `apply_plan.py` / `check_integrity.py` 的 root 参数已改为可选；`fix_session_paths.py --root/--archive`、`sync_projects.py --root` 默认自动探测。
+- `config.json` 记录本机实址（`workspaces_root` / `db_path`，本机为 `D:\WorkBuddy`），是探测链的第二优先级。
+- **迁移映射表统一维护在 `scripts/path_map.py` 的 `MAP`**：每次整理后把 `plan.json` 的 moves 追加进去。`fix_oldpaths.py` / `scan_oldpaths.py` / `scan_db_oldpaths.py` / `fix_db_paths.py` 都从它取规则。
+- 前缀正则只认「任意盘符 + `...\WorkBuddy\`」，所以 C: / D: / F: 上的历史索引都能被同一套规则修掉。
+
 ## 核心规则（必须遵守）
 
 1. **命名**：`YYYY-MM-DD-主题关键词`（例 `2026-09-06-胶片场景58分镜`）。禁止裸时间戳。
 2. **空间内部结构**：`01_outputs/`（交付物，再分 images/docs/video/html）、`02_assets/`（素材）、`03_scripts/`（脚本）、`04_temp/`（中间产物）。产出文件主动归类，不堆根目录。
+   - 清 `04_temp/` 前必须走**草稿三分法**：配方型（脚本/中间稿）可清但要先在记忆留「重生成指引」、资产型（AI 产物/当天数据）必须保留、依赖型（node_modules/venv）确认清单文件后可删。原则是**记忆存配方、磁盘存资产**。
 3. **分类**：默认 `NN-类型-项目名` 数字前缀分类（例 `01-项目-文明之旅`、`08-工具与环境`）；用户明确要「就地改名」时才用一级平铺。
    - **嵌套是安全的**，不会导致任务找不到。2026-09-19 已从应用源码 + 应用自身日志双向验证（见「零、机制真相」）。
    - 真正会让你「点开空白」的从来不是嵌套，而是**没有同步 `projects/` 目录**（规则 6）。历史上曾把「嵌套」当替罪羊，结论错误，已纠正。
@@ -64,6 +73,8 @@ python scripts/check_projects.py                 # 目录一致性
    - 空目录用 `rmdir`（仅空目录能删），删除前逐个核实 0 文件 0 记忆。
    - 改动 `~/.workbuddy/workbuddy.db` 前**必须备份**。
    - 先写对照表再动手，保证可回滚。
+   - **非破坏性铁律（量化条款）**：备份先行（复制到 `<空间>/.workbuddy/backups/<日期>/`，确认成功再动手）→ 每批最多 **10 个文件**、每批后核对 → 回收站优先（不用 `rm`）→ **出错即停**（不续下一批、不反复重试被锁目录）。
+   - 单轮删除超 50 个文件会触发配额限制，必须拆轮次并先取得用户确认。
 5. **归档后必须修数据库**：移动工作空间会导致 `workbuddy.db` 里 `sessions.cwd` / `workspaces.path` 失效。这是最容易漏的一步。
 6. **还必须同步 `.workbuddy/projects/` 目录名**（2026-09-19 补，血泪）：
    - 对话正文不存在数据库里，而在 `~/.workbuddy/projects/<cwd 编码>/<会话id>.jsonl`
@@ -76,12 +87,17 @@ python scripts/check_projects.py                 # 目录一致性
 8. **产物索引与自动化路径也要跟着改**：改完目录和会话，产物卡片仍会指向旧路径（点开「找不到」），
    自动化任务的 `cwds` 也会失效（下次跑直接失败）。见 4.6 节。
    一句话记法：**目录、会话正文、产物索引，三样都要修。**
+9. **清废与巡检**（融合自马厩管理法 / majiu-management，MIT）：
+   - 清废判据走**草稿三分法**，处置守**非破坏性铁律**（见规则 2、4）。
+   - 与每日 9:30 的**写操作归档**互补，另设**季度只读深检**：磁盘大户 / 冷文件 / 烂尾任务 / 记忆健康 → **只出报告、等用户拍板**，未拍板不动任何文件。
+   - 巡检报告模板、自动化指令模板、可选任务台账见 `references/space-hygiene.md`。
+   - ⚠️ 马厩法本身**不含**路径引用修复能力，它的「梳理」只到移动 + 备份 + 回收站。在 WorkBuddy 里移动空间**必须**走完规则 4/5/6/8（db → `projects/` → 产物索引 → 自动化），否则「点开空白 / 产物打不开」。
 
 ## 标准流程
 
 ### 1. 扫描
 ```bash
-python scripts/scan_workspaces.py F:\workbuddy --out scan.json
+python scripts/scan_workspaces.py --out scan.json   # 根目录自动探测，无需传路径
 ```
 输出每个工作空间的：大小、文件数、是否为 `.workbuddy/memory` 记录的主题线索、是否空目录。
 
@@ -101,7 +117,7 @@ python scripts/scan_workspaces.py F:\workbuddy --out scan.json
 }
 ```
 ```bash
-python scripts/apply_plan.py F:\workbuddy plan.json --mapping _整理对照表-YYYY-MM-DD.md
+python scripts/apply_plan.py plan.json --mapping _整理对照表-YYYY-MM-DD.md   # 根目录自动探测
 ```
 - 会自动跳过**被应用锁定**的目录（Windows 下当天活动会话常报 `Permission denied`），并在对照表里标记「待归档」。
   处理方式：记入待办，下次会话启动后补做。
@@ -130,8 +146,9 @@ python scripts/fix_projects_dirs.py --apply            # 执行
 
 ### 4.6 修产物索引与自动化路径（**第 2 个必漏点**）
 ```bash
-python scripts/scan_oldpaths.py                 # 扫 ~/.workbuddy 各索引里的旧路径
-python scripts/fix_oldpaths.py --apply          # 修 artifact-index / changes-index / changes-detail / automation-backups
+python scripts/scan_oldpaths.py                 # 扫 ~/.workbuddy 各索引里的旧路径（只读）
+python scripts/scan_db_oldpaths.py              # 扫各 db 里的旧路径（只读）
+python scripts/fix_oldpaths.py --apply          # 修 artifact-index / changes-index / changes-detail / file-tree-manifests / automation-backups
 python scripts/fix_db_paths.py --apply          # 修 workbuddy.db 的 automations.cwds 等 + edge-sync 缓存
 ```
 - 症状：**会话正文回来了，但产物卡片点开报「找不到」、无法打开文件夹；自动化任务下次跑直接失败**
@@ -145,6 +162,9 @@ python scripts/fix_db_paths.py --apply          # 修 workbuddy.db 的 automatio
   - `file-history/*@vN` 文件内容快照
   - `changes-detail` 里的 `lines` 字段（diff 正文）
 - 映射表统一维护在 `scripts/path_map.py`，**每次整理后把 plan 的 moves 追加进去**
+- ⚠️ **顺序坑（2026-09-20 踩）**：`fix_oldpaths.py` / `fix_db_paths.py` 的运行规则**全部来自 `path_map.MAP`**，不读 plan.json。
+  所以「把 plan 的 moves 追加进 MAP」必须排在 4.6 这两条**之前**执行，否则本轮改动一处也修不到（表现为「替换 0 处」）。
+  正确顺序：apply_plan → fix_session_paths → fix_projects_dirs → **追加 MAP** → fix_oldpaths → fix_db_paths。
 - 坑：db 的 `cwds` 是 JSON-in-TEXT，反斜杠被转义成 `\\`，正则要写 `[/\\]{1,2}`
 
 ### 5. 任务名自动改名（可选但推荐）
@@ -194,3 +214,8 @@ python scripts/rename_sessions.py --apply    # 执行
 - **当天活动会话被锁**：`mv` 报 `Permission denied`，改不了也删不掉。留待下次启动。
 - **mv 链式命令**：`&&` 串联多个 mv，中间一个失败后面全不执行。分批跑，失败的重试单独处理。
 - **大目录**：`du -sm` 对 1GB+ 目录较慢，但比逐个 find 快。
+
+## 配套资源
+
+- `references/space-hygiene.md` — 空间卫生标准：草稿三分法 + 重生成指引模板、非破坏性铁律量化条款、季度只读深检规程 + 报告模板 + 自动化指令模板、可选任务台账。融合自**马厩管理法**（[majiu-management](https://github.com/majiabin2020/majiu-management)，MIT © 2026 majiabin2020）。
+  - 两个 skill 的分工：**马厩法管空间内的日常纪律（怎么命名、什么时候归档、什么该清），本 skill 管空间之间的结构运维（怎么分类、移动后怎么不炸引用）**。马厩法缺的正是后者 —— 单独用它整理 WorkBuddy 工作空间，必然导致会话空白 + 产物打不开。

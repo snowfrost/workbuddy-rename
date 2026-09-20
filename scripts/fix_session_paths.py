@@ -16,6 +16,10 @@ import shutil
 import sqlite3
 import argparse
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import paths  # noqa: E402
+
+
 
 def norm(p):
     return os.path.normpath(p).rstrip(os.sep).lower()
@@ -35,10 +39,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--db', default=os.path.expanduser('~/.workbuddy/workbuddy.db'))
     ap.add_argument('--map', required=True, help='apply_plan.py 使用的 plan.json')
-    ap.add_argument('--root', default=r'F:\workbuddy')
-    ap.add_argument('--archive', default=r'F:\workbuddy\_归档-空会话')
+    ap.add_argument('--root', default=None)
+    ap.add_argument('--archive', default=None)
     ap.add_argument('--apply', action='store_true')
     args = ap.parse_args()
+
+    if not args.root:
+        args.root = paths.detect_root()
+    if not args.archive:
+        args.archive = os.path.join(args.root, '_归档-空会话')
 
     mapping, deleted = load_map(args.map, args.root)
     root = os.path.abspath(args.root)
